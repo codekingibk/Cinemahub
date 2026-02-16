@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SW Status & Download Test</title>
+    <style>
+        body {
+            background: #1a1a1a;
+            color: #fff;
+            font-family: monospace;
+            padding: 2rem;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .panel {
+            background: #0a0a0a;
+            border: 2px solid #333;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            border-radius: 8px;
+        }
+        .header {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        .status-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+        }
+        .status-badge.active {
+            background: #0a0;
+            color: #000;
+        }
+        .status-badge.inactive {
+            background: #a00;
+            color: #fff;
+        }
+        .status-badge.pending {
+            background: #aa0;
+            color: #000;
+        }
+        .log {
+            background: #000;
+            padding: 1rem;
+            border: 1px solid #222;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            color: #0f0;
+        }
+        .log-line {
+            margin: 0.2rem 0;
+        }
+        button {
+            padding: 0.7rem 1.4rem;
+            background: #0f0;
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: monospace;
+            margin: 0.3rem;
+        }
+        button:hover {
+            background: #0d0;
+        }
+        h1 {
+            margin-top: 0;
+            color: #0f0;
+        }
+        .info {
+            background: #001a00;
+            border-left: 4px solid #0f0;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+        }
+    </style>
+    <style>
+        @media (max-width: 420px) {
+            .container { max-width: 100% !important; margin: 0 !important; padding: 0 12px !important; }
+            h1 { font-size: 1.4rem !important; }
+            pre { font-size: 0.75rem !important; }
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Service Worker Debug Console</h1>
+    
+    <div class="panel">
+        <div class="header">
+            <span><strong>Registration Status:</strong></span>
+            <span id="regStatus" class="status-badge inactive">UNREGISTERED</span>
+            <span><strong>Controller Status:</strong></span>
+            <span id="ctrlStatus" class="status-badge inactive">INACTIVE</span>
+        </div>
+        
+        <div class="info" id="info"></div>
+        
+        <div style="margin-top: 1rem;">
+            <strong>Actions:</strong><br>
+            <button onclick="testMessage()">🧪 Test Message to SW</button>
+            <button onclick="testDownload()">📥 Test Download via SW</button>
+            <button onclick="clearLog()">🗑️ Clear Log</button>
+            <button onclick="reloadPage()">🔄 Reload Page</button>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <strong>Console Log:</strong>
+        <div class="log" id="log"></div>
+    </div>
+    
+    <script>
+        const logEl = document.getElementById('log');
+        const infoEl = document.getElementById('info');
+        const regStatusEl = document.getElementById('regStatus');
+        const ctrlStatusEl = document.getElementById('ctrlStatus');
+        
+        let swRegistration = null;
+        let swReady = false;
+        
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.textContent = `[${time}] ${msg}`;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(msg);
+        }
+        
+        function updateStatus() {
+            const controller = navigator.serviceWorker?.controller;
+            regStatusEl.className = `status-badge ${swRegistration ? 'active' : 'inactive'}`;
+            regStatusEl.textContent = swRegistration ? '✓ REGISTERED' : '✗ NOT REGISTERED';
+            
+            ctrlStatusEl.className = `status-badge ${controller && swReady ? 'active' : controller ? 'pending' : 'inactive'}`;
+            ctrlStatusEl.textContent = controller && swReady ? '✓ ACTIVE' : controller ? '⏳ PENDING' : '✗ INACTIVE';
+            
+            const info = `<strong>Controller:</strong> ${controller ? 'YES' : 'NO'}<br>
+                         <strong>SwReady:</strong> ${swReady}<br>
+                         <strong>Navigator.sw.controller:</strong> ${controller ? 'exists' : 'null'}<br>`;
+            infoEl.innerHTML = info;
+        }
+        
+        function clearLog() {
+            logEl.innerHTML = '';
+        }
+        
+        function reloadPage() {
+            window.location.reload();
+        }
+        
+        function testMessage() {
+            log('Sending TEST message to SW...');
+            if (navigator.serviceWorker?.controller) {
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'TEST',
+                    payload: { timestamp: Date.now() }
+                });
+                log('✓ TEST message sent');
+            } else {
+                log('✗ No controller to send message to');
+            }
+        }
+        
+        function testDownload() {
+            log('Testing download via SW...');
+            if (navigator.serviceWorker?.controller) {
+                const testUrl = 'http://localhost:5000/api/search?q=test';
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'START_DOWNLOAD',
+                    payload: {
+                        entryId: 'test-' + Date.now(),
+                        title: 'Test Download',
+                        url: testUrl,
+                        userId: 'test-user',
+                        cacheKey: testUrl + '?offline=1'
+                    }
+                });
+                log('✓ Download started via SW');
+            } else {
+                log('✗ Cannot start download - no  controller');
+            }
+        }
+        
+        async function initSW() {
+            log('=== Initializing Service Worker ===');
+            
+            if (!navigator.serviceWorker) {
+                log('✗ Service Workers not supported');
+                updateStatus();
+                return;
+            }
+            
+            try {
+                log('Registering /sw.js with scope "/"...');
+                swRegistration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                log(`✓ Registration successful`);
+                
+                // Attach message listener
+                navigator.serviceWorker.addEventListener('message', (event) => {
+                    const { type, payload } = event.data;
+                    log(`[SW MESSAGE] ${type}: ${JSON.stringify(payload).substring(0, 60)}...`);
+                });
+                log('✓ Message listener attached');
+                
+                // Check controller
+                updateStatus();
+                
+                if (navigator.serviceWorker.controller) {
+                    log('✓ Page already controlled by SW');
+                    swReady = true;
+                    updateStatus();
+                } else {
+                    log('⏳ Waiting for controller...');
+                    
+                    const onControllerChange = () => {
+                        log('✓ Controller ACTIVATED');
+                        swReady = true;
+                        updateStatus();
+                    };
+                    
+                    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+                    
+                    // Periodically check
+                    for (let i = 0; i < 10; i++) {
+                        await new Promise(r => setTimeout(r, 500));
+                        if (navigator.serviceWorker.controller) {
+                            log('✓ Controller detected after wait');
+                            swReady = true;
+                            updateStatus();
+                            break;
+                        }
+                    }
+                    
+                    if (!navigator.serviceWorker.controller) {
+                        log('⚠ Controller still not active after 5s');
+                        updateStatus();
+                    }
+                }
+            } catch (error) {
+                log(`✗ Registration error: ${error.message}`);
+                updateStatus();
+            }
+        }
+        
+        // Start initialization
+        window.addEventListener('DOMContentLoaded', initSW);
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            initSW();
+        }
+    </script>
+</body>
+</html>

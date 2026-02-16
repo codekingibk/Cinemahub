@@ -1,0 +1,4 @@
+[console_scripts]
+moviebox = moviebox_api.cli.interface:main
+moviebox-api = moviebox_api.cli.interface:main
+moviebox-interactive = moviebox_api.cli.interactive:run_interactive_menu

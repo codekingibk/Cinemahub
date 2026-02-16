@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Service Worker Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #0f0;
+            padding: 2rem;
+            max-width: 800px;
+        }
+        .log {
+            background: #000;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .status {
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 4px;
+            border: 2px solid;
+        }
+        .status.ready {
+            background: rgba(0,255,0,0.1);
+            border-color: #0f0;
+            color: #0f0;
+        }
+        .status.not-ready {
+            background: rgba(255,0,0,0.1);
+            border-color: #f00;
+            color: #f00;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            background: #0f0;
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #0d0;
+        }
+    </style>
+    <style>
+        @media (max-width: 420px) {
+            body { padding: 1rem; }
+            h1 { font-size: 1.2rem; }
+            .log { max-height: 200px; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Service Worker Status</h1>
+    
+    <div id="status" class="status not-ready">
+        <strong>Status:</strong> <span id="statusText">Checking...</span>
+    </div>
+    
+    <div>
+        <button onclick="testMessage()">Test Message to SW</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+    
+    <div class="log" id="log"></div>
+    
+    <script>
+        const logElement = document.getElementById('log');
+        const statusElement = document.getElementById('status');
+        const statusText = document.getElementById('statusText');
+        
+        function log(msg) {
+            const time = new Date().toLocaleTimeString();
+            logElement.textContent += `[${time}] ${msg}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(msg);
+        }
+        
+        function updateStatus(ready) {
+            if (ready) {
+                statusElement.className = 'status ready';
+                statusText.textContent = '✓ Service Worker is ACTIVE and ready to receive messages';
+            } else {
+                statusElement.className = 'status not-ready';
+                statusText.textContent = '✗ Service Worker is NOT ready yet';
+            }
+        }
+        
+        function clearLog() {
+            logElement.textContent = '';
+        }
+        
+        async function testMessage() {
+            log('Testing message to SW...');
+            if (navigator.serviceWorker?.controller) {
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'TEST',
+                    payload: { timestamp: Date.now() }
+                });
+                log('✓ Message sent to SW');
+            } else {
+                log('✗ No SW controller available');
+            }
+        }
+        
+        async function initSW() {
+            log('Starting Service Worker initialization...');
+            
+            if (!navigator.serviceWorker) {
+                log('✗ Service Workers not supported');
+                updateStatus(false);
+                return;
+            }
+            
+            try {
+                log('Registering Service Worker from /sw.js...');
+                const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                log(`✓ Service Worker registered: ${reg.scope}`);
+                
+                // Add message listener
+                navigator.serviceWorker.addEventListener('message', (event) => {
+                    log(`[FROM-SW] ${JSON.stringify(event.data)}`);
+                });
+                log('✓ Message listener attached');
+                
+                // Check controller
+                if (navigator.serviceWorker.controller) {
+                    log('✓ Controller ALREADY ACTIVE');
+                    updateStatus(true);
+                } else {
+                    log('⏳ Waiting for controller to activate...');
+                    updateStatus(false);
+                    
+                    // Listen for initial controller
+                    const checkController = () => {
+                        if (navigator.serviceWorker.controller) {
+                            log('✓ Controller ACTIVATED');
+                            updateStatus(true);
+                            navigator.serviceWorker.removeEventListener('controllerchange', checkController);
+                        }
+                    };
+                    
+                    navigator.serviceWorker.addEventListener('controllerchange', checkController);
+                    
+                    // Also check registration events
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        if (newWorker) {
+                            log(`Worker state changed: ${newWorker.state}`);
+                            newWorker.addEventListener('statechange', () => {
+                                log(`Worker new state: ${newWorker.state}`);
+                                if (newWorker.state === 'activated') {
+                                    log('✓ Worker activated (installed)');
+                                    updateStatus(true);
+                                }
+                            });
+                        }
+                    });
+                }
+            } catch (error) {
+                log(`✗ Registration failed: ${error.message}`);
+                updateStatus(false);
+            }
+        }
+        
+        // Start on page load
+        window.addEventListener('DOMContentLoaded', initSW);
+        
+        // Also start immediately in case page loaded before script
+        if (document.readyState !== 'loading') {
+            initSW();
+        }
+    </script>
+</body>
+</html>
